@@ -11,7 +11,7 @@ Timing properties are named after similar concepts that are already in use withi
 Timing Events extend current DOM events and follow the [W3C DOM Level 2](http://www.w3.org/TR/DOM-Level-2-Core/) standard model, which can be normally used within HTML elements. Alternatively, it is also possible to register/unregister event listeners on event target objects using the JavaScript methods addEventListener and removeEventLister, respectively. Complementary, TSS pseudo-classes can also be used to define specific presentation styles for different playback phases, in particular, when the playback cycle effectively starts (after timing-delay is computed) or ends.
 
 ## Documentation
-The documentation of this JavaScript library can be found in the [docs](/docs) folder. In this section we provide an overview of the facilities provided by Time Style Sheets to encode temporal presentations on the Web. For more details, please refer to:
+The documentation of the JavaScript library implementation can be found in the [docs](/docs) folder. In this section we provide an overview of the facilities provided by Time Style Sheets to encode temporal presentations on the Web. For more details, please refer to:
 
 Rodrigo Laiola Guimarães, Dick Bulterman, Pablo Cesar, and Jack Jansen. 2014. Synchronizing Web Documents with Style. In *Proceedings of the 20th Brazilian Symposium on Multimedia and the Web* (WebMedia '14). ACM, New York, NY, USA, 151-158. DOI=10.1145/2664551.2664555 [http://doi.acm.org/10.1145/2664551.2664555](http://doi.acm.org/10.1145/2664551.2664555)
 
