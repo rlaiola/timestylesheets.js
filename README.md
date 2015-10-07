@@ -11,7 +11,7 @@ Timing properties are named after similar concepts that are already in use withi
 Timing Events extend current DOM events and follow the [W3C DOM Level 2](http://www.w3.org/TR/DOM-Level-2-Core/) standard model, which can be normally used within HTML elements. Alternatively, it is also possible to register/unregister event listeners on event target objects using the JavaScript methods addEventListener and removeEventLister, respectively. Complementary, TSS pseudo-classes can also be used to define specific presentation styles for different playback phases, in particular, when the playback cycle effectively starts (after timing-delay is computed) or ends.
 
 ## Documentation
-The documentation of this JavaScript library can be found in the [/docs](/docs) folder. In this section we provide an overview of the facilities provided by Time Style Sheets to encode temporal presentations on the Web. For more details, please refer to:
+The documentation of this JavaScript library can be found in the [docs](/docs) folder. In this section we provide an overview of the facilities provided by Time Style Sheets to encode temporal presentations on the Web. For more details, please refer to:
 
 Rodrigo Laiola Guimarães, Dick Bulterman, Pablo Cesar, and Jack Jansen. 2014. Synchronizing Web Documents with Style. In *Proceedings of the 20th Brazilian Symposium on Multimedia and the Web* (WebMedia '14). ACM, New York, NY, USA, 151-158. DOI=10.1145/2664551.2664555 [http://doi.acm.org/10.1145/2664551.2664555](http://doi.acm.org/10.1145/2664551.2664555)
 
@@ -61,7 +61,7 @@ The Timing Events proposed in the Time Style Sheets specification are:
 - ```onpause```: The event occurs when the playing state of an element changes to paused.
 - ```ontimeupdate```: ￼The event occurs when the playback time changes.
 
-![State machine and associated events](https://rlaiola.github.com/images/state_machine.png)
+![State machine and associated events](images/state_machine.png)
 
 Timing Events can be normally used within HTML elements as shown below.
 
@@ -124,7 +124,7 @@ slideshow.addEventListener("onbegin", function(ev){
 </script>
 ```
 
-![Slideshow example: each image waits for the previous child of the sequence to finish, and then it plays.](https://rlaiola.github.com/images/example.png)
+![Slideshow example: each image waits for the previous child of the sequence to finish, and then it plays.](images/example.png)
 
 ## Usage
 We developed a JavaScript TSS compliant agent composed of a parser that interprets a TSS definition and a renderer that implements the semantics specified in such document. Our implementation relies on [JSCSSP](http://www.glazman.org/JSCSSP/), a CSS parser in JavaScript. To make use of our TSS proof of concept, an author just needs to download the JSCSSP library [here](http://sources.disruptive-innovations.com/jscssp/trunk/cssParser.js) and import the JavaScript files in the head of the HTML document, as follows:
@@ -135,7 +135,7 @@ We developed a JavaScript TSS compliant agent composed of a parser that interpre
 ```
 Once the page is completely loaded by the browser, the TSS parser examines the associated styles and triggers a custom *ontssparserready* event. At this moment, a TSS renderer that listens to such event takes over and schedules the document presentation accordingly.
 
-![Implementation diagram.](https://rlaiola.github.com/images/workflow.png)
+![Implementation diagram.](images/workflow.png)
 
 ## Examples
 This repository contains basic [code examples](./test/) to help you understand how to use this JavaScript implementation of Time Style Sheets.
