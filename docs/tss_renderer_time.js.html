@@ -1,0 +1,2789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: tss_renderer_time.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: tss_renderer_time.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * The contents of this file are subject to the Mozilla Public License
+ * Version 1.1 (the "License"); you may not use this file except in
+ * compliance with the License. You may obtain a copy of the License at
+ * https://www.mozilla.org/MPL/
+ * 
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See the
+ * License for the specific language governing rights and limitations
+ * under the License.
+ * 
+ * The Original Code is a JavaScript implementation of Time Style Sheets (TSS).
+ * 
+ * The Initial Developer of the Original Code is IBM Research (Brazil).
+ * Portions created by the Initial Developer are Copyright (C) 2015 
+ * the Initial Developer. All Rights Reserved.
+ * 
+ * Contributor(s): Rodrigo Laiola Guimarães &lt;http://www.rodrigolaiola.com>
+ */
+
+/**
+ * @overview implements a temporal semantics of the Time Style Sheets (TSS) specification.
+ * @requires tss_parser
+ * @license MPL v1.1
+ * @version 0.1
+ */
+
+/** 
+ * this module implements a temporal renderer that schedules the document presentation accordingly after the &lt;i>ontssparserready&lt;/i> event is triggered. It also extends the DOM elements with the computed TSS properties and events, so that these can still be read or updated at any time, as demonstrated in the examples below.
+ *
+ * @module
+ *
+ * @example
+ * // Ex1: specify that the children elements will presented in sequence.
+ * CSS syntax -> selector { timing-container: seq; }
+ * JS syntax -> object.style.timingContainer = "seq";
+ *              console.log(object.style.timingContainer); // seq
+ *
+ * @example
+ * // Ex2: specify that the element will start with a delay of 2s.
+ * CSS syntax -> selector { timing-delay: 2s; }
+ * JS syntax -> object.style.timingDelay = "2s";
+ *              console.log(object.style.timingDelay);    // 2
+ *
+ * @example
+ * // Ex3: set the element's presentation state to running.
+ * CSS syntax -> selector { timing-play-state: running; }
+ * JS syntax -> object.style.timingPlayState = "running";
+ *              console.log(object.style.timingPlayState); // running
+ *
+ * @example
+ * // Ex4: run a custom function when the onbegin event is triggered
+ * HTML syntax -> &lt;element onbegin=”SomeJavaScriptCode”>...&lt;/element>
+ * JS syntax -> object.onbegin=function(){SomeJavaScriptCode};
+ */
+
+/* 
+ * support functions 
+ */
+
+/* merge contents of two objects and put into the first object */
+function extend(a, b, force) {
+	for (var key in b) {
+		var pa = Object.getOwnPropertyDescriptor(a, key);
+		var pb = Object.getOwnPropertyDescriptor(b, key);
+		
+		if (!pa || force) {
+			if (pb &amp;&amp; pb.get) {
+				Object.defineProperty(a, key, {
+					get : pb.get,
+					set : pb.set,
+					enumerable: pb.enumerable,
+					configurable: pb.configurable
+				});
+			} else {
+				Object.defineProperty(a, key, {
+					value: pb.value,
+					enumerable: pb.enumerable,
+					writable: pb.writable,
+					configurable: pb.configurable
+				});
+			}
+		}
+	}
+	
+	return a;
+}
+
+/* check if an element has a given class */
+HTMLElement.prototype.hasClass = function(name) {
+    return new RegExp('(?:^|\\s+)' + name + '(?:\\s+|$)').test(this.className);
+}
+
+/* add a class(es) to an element */
+HTMLElement.prototype.addClass = function(classes) {
+	if (!classes) return;
+	
+	classes = classes.split(' ');
+	for (var i=0; i&lt;classes.length; i++) {
+		if (!this.hasClass(classes[i])) {
+			this.className = this.className ? [this.className, classes[i]].join(' ') : classes[i];
+		}
+	}
+}
+
+/* remove a class(es) from an element */
+HTMLElement.prototype.removeClass = function(classes) {
+	if (!classes) return;
+	
+	classes = classes.split(' ');
+	for (var i=0; i&lt;classes.length; i++) {
+		if (this.hasClass(classes[i])) {
+			var c = this.className;
+			this.className = c.replace(new RegExp('(?:^|\\s+)' + classes[i] + '(?:\\s+|$)', 'g'), '');
+		}
+	}
+}
+
+/* bind handler to given event(s) */
+HTMLElement.prototype.bind = function(events, handler, asFirst) {
+	if (!events) return;
+	
+	events = events.split(' ');
+	for (var i=0;i&lt;events.length;i++) {
+		if (!this['ontss' + events[i]]) this['ontss' + events[i]] = new Array();
+		if (asFirst) this['ontss' + events[i]].unshift(handler);
+		else this['ontss' + events[i]].push(handler);
+		
+		if (this.addEventListener) {							/* DOM Level 2 browsers */
+			if (asFirst) {
+				for (var j=0; j&lt;this['ontss' + events[i]].length; j++) {
+					this.removeEventListener(events[i], this['ontss' + events[i]][j]);
+				}
+				
+				for (var j=0; j&lt;this['ontss' + events[i]].length; j++) {
+					this.addEventListener(events[i], this['ontss' + events[i]][j]);
+				}
+			}
+			else this.addEventListener(events[i], handler, false);
+		} else if (this.attachEvent) {							/* IE &lt;= 8 */
+			if (asFirst) {
+				for (var j=0; j&lt;this['ontss' + events[i]].length; j++) {
+					this.detachEvent('on' + events[i], this['ontss' + events[i]][j]);
+				}
+				
+				for (var j=0; j&lt;this['ontss' + events[i]].length; j++) {
+					this.attachEvent('on' + events[i], this['ontss' + events[i]][j]);
+				}
+			}
+			else this.attachEvent('on' + events[i], handler);
+		} else {												/* ancient browsers */
+			
+		}
+	}
+}
+
+/* unbind handler to given event(s) */
+HTMLElement.prototype.unbind = function(events, handler) {
+	if (!events) return;
+	
+	events = events.split(' ');
+	for (var i=0;i&lt;events.length;i++) {
+		if (this.removeEventListener) { /* DOM Level 2 browsers */
+			for (var j=0; this['ontss' + events[i]] &amp;&amp; j&lt;this['ontss' + events[i]].length; j++) {
+				if (!handler) this.removeEventListener(events[i], this['ontss' + events[i]][j]);
+				else if (handler == this['ontss' + events[i]][j]) {
+					this.removeEventListener(events[i], this['ontss' + events[i]][j]);
+					this['ontss' + events[i]].splice(j, 1);
+					j--;
+				}
+			}
+		} else if (this. detachEvent) { /* IE &lt;= 8 */
+			for (var j=0; j&lt;this['ontss' + events[i]].length; j++) {
+				if (!handler) this.detachEvent('on' + events[i], this['ontss' + events[i]][j]);
+				else if (handler == this['ontss' + events[i]][j]) {
+					this.detachEvent('on' + events[i], this['ontss' + events[i]][j]);
+					this['ontss' + events[i]].splice(j, 1);
+					j--;
+				}
+			}
+		} else { 						/* ancient browsers */
+			
+		}
+		
+		if (!handler) this['ontss' + events[i]] = null;
+	}
+}
+
+/* trigger a given event */
+HTMLElement.prototype.trigger = function(event, args) {
+	var ev;
+	
+	try {
+		/* new browsers */
+		ev = new CustomEvent(event, { 'detail': args });
+	} catch(e) {
+		/* old browsers: deprecated */
+		ev = document.createEvent('Event');
+		ev.initEvent(event, true, true);
+		ev.detail = args;
+	}
+	
+	if (document.createEvent) {
+		this.dispatchEvent(ev);
+	} else if (this.fireEvent) {
+		element.fireEvent('on' + ev.eventType, event);
+	} else if (this['on' + event] || false) {
+		for (var i=0; i&lt;this['ontss' + ev.type].length; i++) {
+			if (typeof this['ontss' + ev.type][i] == 'function') this['ontss' + ev.type][i](event, args);
+		}
+	}
+};
+ 
+/* 
+ * renderer implementation 
+ */
+
+/* define master clock */
+(function() {
+	window.performance = window.performance || {};
+	performance.now = (function() {
+		return performance.now    ||
+			performance.mozNow    ||
+			performance.msNow     ||
+			performance.oNow      ||
+			performance.webkitNow ||            
+			Date.now  /* none found - fallback to browser default */
+	})();
+	
+	var Tempo = function() {
+		/* private variables */
+		this.timeout = 40;			/* clock timeout: 40ms or 25 fps */
+		this.itemList = [];			/* list of items that require time support */
+		this.lastTimeout = null;	/* last registered time */
+		
+		/* init method */
+		var that = this;
+		var initialize = function() {
+			that.lastTimeout = performance.now();
+			that.timeupdate();
+		};
+		
+		initialize();
+	};
+	Tempo.prototype = {
+		/* register item */
+		add : function(item) {
+			for (var i=0;i&lt;this.itemList.length;i++) {
+				if (this.itemList[i] == item) {
+					return false;
+				}
+			}
+			
+			this.itemList.push(item);
+			
+			/* is it the first item? If so, we shall start the timer */
+			if (this.itemList.length == 1) {
+				this.lastTimeout = null;
+				this.timeupdate();
+			}
+			
+			return true;
+		},
+		/* remove item */
+		remove : function(item) {
+			for (var i=0;i&lt;this.itemList.length;i++) {
+				if (this.itemList[i] == item) {
+					this.itemList.splice(i, 1);
+					return true;
+				}
+			}
+			
+			return false;
+		},
+		/* compute the elapsed time */
+		timeupdate : function() {
+			/* shall we stop the timer? */
+			if (this.itemList.length == 0) 
+				return;
+			
+			/* if not, let's get some time update done */
+			var now = performance.now();
+			var timeOffset = now - this.lastTimeout;
+			this.lastTimeout = now;
+			
+			/* update current time of all registered elements */
+			for (var i=0;i&lt;this.itemList.length;i++) {
+				var item = this.itemList[i];
+				item.trigger('tempoupdate', timeOffset);
+			}
+			
+			/* recursively re-run the function */
+			setTimeout('window.tempo.timeupdate()', this.timeout);
+		}
+	};
+	
+	window.tempo = new Tempo();
+})()
+
+/* define event names */
+var TSS_PLAY_EVENT			= 'onplay';
+var TSS_PAUSE_EVENT			= 'onpause';
+var TSS_BEGIN_EVENT			= 'onbegin';
+var TSS_END_EVENT			= 'onend';
+var TSS_YIELD_EVENT			= 'onyield';
+var TSS_WAIT_EVENT			= 'onwait';
+var TSS_CAN_PLAY_EVENT		= 'oncanplay';
+var TSS_TIMEUPDATE_EVENT	= 'ontimeupdate';
+
+/* define temporal containers and media objects */
+window.TSSPar;
+window.TSSSeq;
+window.TSSMedia;
+
+(function() {
+	
+	var parseItem = function(elem, parent) {
+		if (!elem) return;
+		
+		var item;
+		var options = extend({}, window.tss(elem) ? window.tss(elem) : {});
+		options.domNode = elem;
+		options.parent = parent;
+		if (!options.timingContainer) {
+			if (elem.nodeType === 1 &amp;&amp; 
+				(elem.nodeName == 'VIDEO' || 
+				elem.nodeName == 'AUDIO' ||
+				elem.nodeName == 'IMG'));
+			else options.timingContainer = 'par';
+		}
+		switch (options.timingContainer) {
+			case 'seq':
+				item = new TSSSeq(options);
+				break;
+			case 'par':
+				item = new TSSPar(options);
+				break;
+			default:
+				item = new TSSMedia(options);
+				break;
+		}
+		return item;
+	}
+	
+	function findSyncMaster(sync) {
+		/* returns the first element that matches a particular CSS selector(s) in the document */
+		return document.querySelector(sync);
+	}
+	
+	TSSPar = function(options) {
+		/* default options */
+		var settings = extend(options, {
+			timingDelay:			null,
+			timingDuration:			null,
+			timingIterationCount:	1,
+			timingPlayState:		null,
+			timingSyncMaster:		null,
+			domNode:				null,
+			parent:					null
+		});
+		
+		/* 
+		 * private variables 
+		 */
+		
+		/* keep self reference */
+		var self = settings.domNode;
+		
+		/* before doing anything, test wether this node has already been instantiated */
+		if (Object.getOwnPropertyDescriptor(self.style, 'timingDelay') &amp;&amp; self.style.timingContainer) {
+			if (self.style.timingContainer != 'par') {
+				self.style.timingContainer = settings.timingContainer;
+			}
+			
+			/* element has already been extended with timing properties */
+			if (self.style.timingDelay != settings.timingDelay) self.style.timingDelay = settings.timingDelay;
+			if (self.style.timingDuration != settings.timingDuration) self.style.timingDuration = settings.timingDuration;
+			if (self.style.timingIterationCount != settings.timingIterationCount) self.style.timingIterationCount = settings.timingIterationCount;
+			if (self.style.timingPlayState != settings.timingPlayState) self.style.timingPlayState = settings.timingPlayState;
+			if (self.style.timingSyncMaster != settings.timingSyncMaster) self.style.timingSyncMaster = settings.timingSyncMaster;
+			
+			return null;
+		}
+		
+		/* control properties */
+		var voided = false;
+		var initiated = false;
+		var begun = false;
+		var paused = true;
+		var ended = false;
+		var error = false;
+		var waiting = false;
+		var canplay = true;
+		
+		/* presentation properties */
+		var dur = settings.timingDuration ? parseFloat(settings.timingDuration) : settings.timingDuration;
+		var repeatCount = settings.timingIterationCount == 'infinite' ? 
+			9007199254740992 : parseInt(settings.timingIterationCount);
+		var repeatInstance = repeatCount;
+				
+		/* other presentation properties */
+		var muted = false;
+		var playbackRate = 1.0;
+		var currentTime = settings.timingDelay != null ? (-1.0 * parseFloat(settings.timingDelay)) : 0.0;
+		var delayComputed = true;
+		
+		/* list of items to be played in parallel */
+		var itemList = [];
+		
+		/* mutation observer */
+		var observer;
+		
+		/* start with not active element even before initialization */
+		self.setAttribute('tss-state', 'not-active');
+		
+		/* we need to define this function in the scope of the object */
+		function timeUpdateListener(event) {
+			event.stopPropagation();
+			
+			if (event.type == TSS_TIMEUPDATE_EVENT) {
+				var newTime = event.detail;
+				var delay = settings.timingDelay != null ? (1.0 * parseFloat(settings.timingDelay)) : 0.0;
+				currentTime = newTime - delay;
+				
+				if (begun &amp;&amp; currentTime &lt; 0) {
+					/* clean the house */
+					self.setAttribute('tss-state', 'not-active');
+					delayComputed = false;
+				}
+				
+				if (ended &amp;&amp; newTime &lt;= delay + dur)
+					that.currentTime = newTime - delay;
+			}
+			else if (begun &amp;&amp; !paused) {			/* begun &amp;&amp; playing */
+				currentTime = currentTime + event.detail/1000.0;
+			}
+			
+			if (!delayComputed &amp;&amp; currentTime >=0) {
+				delayComputed = true;
+				begun = false; 				/* review: is it the best way? */
+				that.play;
+			}
+			
+			if (begun &amp;&amp; !ended &amp;&amp; typeof dur == 'number' &amp;&amp; currentTime >= dur) {
+				currentTime = 0;
+		
+				/* we must skip the currItem yieldEvent */
+				ended = true;
+				for (var i=0;i&lt;itemList.length;i++) {
+					itemList[i].style.stop;
+				}					
+				self.trigger(TSS_END_EVENT);
+			}
+			
+			if (paused) return;
+			
+			/* notify time update handlers */
+			self.trigger(TSS_TIMEUPDATE_EVENT, currentTime);
+			
+			/* is there an event attribute? If so, let's run it */
+			var evtAttr = self.getAttribute(TSS_TIMEUPDATE_EVENT);
+			if (evtAttr) {
+				try {
+					eval(evtAttr);
+				} catch (e) {}
+			}
+		}
+				
+		/* 
+		 * public events
+		 */
+		
+		var f;
+		
+		/* play event */
+		self.bind(TSS_PLAY_EVENT, f = function(event) {
+			event.stopPropagation();
+			
+			/* make sure it will not be active */
+			if (voided) {
+				self.unbind(TSS_PLAY_EVENT, f);
+				return;
+			}
+			
+			paused = false;
+			
+			/* is there an event attribute? If so, let's run it */
+			var evtAttr = self.getAttribute(TSS_PLAY_EVENT);
+			if (evtAttr) {
+				try {
+					eval(evtAttr);
+				} catch (e) {}
+			}
+			
+			if (!begun) {
+				begun = true;
+				ended = false;
+				self.trigger(TSS_BEGIN_EVENT);
+			}
+		}, false);
+		
+		/* pause event */
+		self.bind(TSS_PAUSE_EVENT, f = function(event) {
+			event.stopPropagation();
+			
+			/* make sure it will not be active */
+			if (voided) {
+				self.unbind(TSS_PAUSE_EVENT, f);
+				return;
+			}
+			
+			paused = true;
+			
+			/* is there an event attribute? If so, let's run it */
+			var evtAttr = self.getAttribute(TSS_PAUSE_EVENT);
+			if (evtAttr) {
+				try {
+					eval(evtAttr);
+				} catch (e) {}
+			}
+		}, false);
+	
+		/* begin event */
+		self.bind(TSS_BEGIN_EVENT, f = function(event) {
+			event.stopPropagation();
+			
+			/* make sure it will not be active */
+			if (voided) {
+				self.unbind(TSS_BEGIN_EVENT, f);
+				return;
+			}
+			
+			if (delayComputed) {
+				/* set pseudo-class */
+				self.setAttribute('tss-state', 'active');
+			}
+			
+			/* is there an event attribute? If so, let's run it */
+			var evtAttr = self.getAttribute(TSS_BEGIN_EVENT);
+			if (evtAttr) {
+				try {
+					eval(evtAttr);
+				} catch (e) {}
+			}
+		}, false);
+		
+		/* end event */
+		self.bind(TSS_END_EVENT, f = function(event) {
+			event.stopPropagation();
+			
+			/* make sure it will not be active */
+			if (voided) {
+				self.unbind(TSS_END_EVENT, f);
+				return;
+			}
+			
+			paused = true;
+			begun = false;
+			ended = true;
+			waiting = false;
+			canplay = true;
+			
+			/* is there an event attribute? If so, let's run it */
+			var evtAttr = self.getAttribute(TSS_END_EVENT);
+			if (evtAttr) {
+				try {
+					eval(evtAttr);
+				} catch (e) {}
+			}
+			
+			/* reset the time anyway */
+			currentTime = settings.timingDelay != null ? (-1.0 * parseFloat(settings.timingDelay)) : 0.0;
+			
+			/* clean the house */
+			self.setAttribute('tss-state', 'not-active');
+			
+			/* does it have a repeatCount? */
+			repeatInstance--;
+			if (repeatInstance &lt;= 0) {
+				/* REVIEW IT */
+				settings.timingPlayState = 'paused';
+				
+				repeatInstance = repeatCount;
+				self.trigger(TSS_YIELD_EVENT);
+				
+				if (!settings.timingSyncMaster) window.tempo.remove(self);
+				initiated = false;
+				delayComputed = true;
+				self.unbind('tempoupdate');
+			}
+			else that.play;
+		}, false);
+		
+		/* 
+		 * private methods
+		 */
+		 
+		/* prepare children */
+		var setupItem = function(elem) {
+			if (!elem) return;
+			
+			/* begin event */
+			elem.bind(TSS_BEGIN_EVENT, function(event) {
+				event.stopPropagation();
+				
+				/* make sure it will not be active */
+				if (voided) {
+					self.unbind(TSS_BEGIN_EVENT, this);
+					return;
+				}
+			});
+			
+			/* play event */
+			elem.bind(TSS_PLAY_EVENT, function(event) {
+				event.stopPropagation();
+				
+				/* make sure it will not be active */
+				if (voided) {
+					self.unbind(TSS_PLAY_EVENT, this);
+					return;
+				}
+				
+				if (!paused &amp;&amp; begun) return;	/* begun &amp;&amp; playing */
+				
+				/* we should not propagate a pause event */
+				return;
+			});
+			
+			/* pause event */
+			elem.bind(TSS_PAUSE_EVENT, function(event) {
+				event.stopPropagation();
+				
+				/* make sure it will not be active */
+				if (voided) {
+					self.unbind(TSS_PAUSE_EVENT, this);
+					return;
+				}
+				
+				if (paused) return;
+				
+				/* we should not propagate a pause event */
+				return;
+			});
+			
+			/* end event */
+			/* we should look at the yieldEvent instead of the endEvent */
+			elem.bind(TSS_YIELD_EVENT, function(event) {
+				event.stopPropagation();
+				
+				/* make sure it will not be active */
+				if (voided) {
+					self.unbind(TSS_YIELD_EVENT, this);
+					return;
+				}
+				
+				if (ended) return;
+				
+				/* only continues if all children ended */
+				for (var i=0;i&lt;itemList.length;i++) {
+					if (itemList[i].style.begun &amp;&amp; !itemList[i].style.ended) {
+						return;
+					}
+				}
+				
+				/* all children ended. but we should check one last thing... */
+				/* we only trigger this end event if duration has not been defined */
+				if (typeof dur != 'number') self.trigger(TSS_END_EVENT);
+			});
+			
+			/* waiting event */
+			elem.bind(TSS_WAIT_EVENT, function(event) {
+				event.stopPropagation();
+				
+				/* make sure it will not be active */
+				if (voided) {
+					self.unbind(TSS_WAIT_EVENT, this);
+					return;
+				}
+				
+				waiting = true;
+				canplay = false;
+				
+				/* trigger own waiting event */
+				self.trigger(TSS_WAIT_EVENT);
+			});
+			
+			/* canplay event */
+			elem.bind(TSS_CAN_PLAY_EVENT, function(event) {
+				event.stopPropagation();
+				
+				/* make sure it will not be active */
+				if (voided) {
+					self.unbind(TSS_CAN_PLAY_EVENT, this);
+					return;
+				}
+				
+				/* only change state if all children can play */
+				for (var i=0;i&lt;itemList.length;i++) {
+					if (itemList[i].style.waiting) {
+						return;
+					}
+				}
+				
+				waiting = false;
+				canplay = true;
+				
+				/* trigger own waiting event */
+				self.trigger(TSS_CAN_PLAY_EVENT);
+			});
+		}
+		
+		/* go through children nodes */
+		var validateChildren = function() {
+			itemList = [];
+			
+			if (self.hasChildNodes()) {
+				var child = self.firstChild;
+				while (child) {
+					/* is it a valid element */
+					if (child.nodeType === 1 &amp;&amp; 
+						child.nodeName != 'SCRIPT' &amp;&amp;
+						child.nodeName != 'LINK' &amp;&amp;
+						child.nodeName != 'STYLE' &amp;&amp;
+						child.nodeName != 'SOURCE' &amp;&amp;
+						child.nodeName != 'TIME') {
+						if (Object.getOwnPropertyDescriptor(child.style, 'timingDelay')) {
+							/* element has already been extended with timing properties */
+						}
+						else {
+							var item = parseItem(child, self);
+							extend(child.style, item);
+						}
+						itemList.push(child);
+					}
+					child = child.nextSibling;
+				}
+			}
+		}
+		validateChildren();
+		
+		for (var i=0;i&lt;itemList.length;i++) {
+			var child = itemList[i];
+			setupItem(child);
+		}
+		
+		/* new browsers */
+		try {
+			/* create an observer instance
+			   source: https://developer.mozilla.org/en/docs/Web/API/MutationObserver 
+			*/
+			observer = new MutationObserver(function(mutations) {
+				mutations.forEach(function(mutation) {
+					var target = mutation.target; /* target node */
+					
+					switch (mutation.type) {
+						case 'childList':
+							/* first let's revalidate children nodes */
+							validateChildren();
+							
+							/* now, process new elements */
+							for (var i=0; i&lt;mutation.addedNodes.length; i++) {
+								var child = mutation.addedNodes[i];
+								/* add listeners, but only if it is relevant */
+								if (itemList.indexOf(child) >= 0) setupItem(child);
+							}
+							
+							/* process removed elements */
+							for (var i=0; i&lt;mutation.removedNodes.length; i++) {
+								var child = mutation.removedNodes[i];
+							}
+							
+							/* in case the element is active and playing we need to initialize its new children */
+							if (begun &amp;&amp; !paused) {
+								that.pause;
+								that.play;
+							}
+							break;
+						case 'attributes':
+							if (mutation.attributeName == 'style') {
+								/* we need to check whether a TSS property has been updated */
+							}
+							break;
+						default:
+							break;
+					}
+				});
+			});
+			
+			/* configuration of the observer */
+			var config = { attributes: true, childList: true, characterData: true/*, subtree: true*/ };
+			
+			/* pass in the target node, as well as the observer options */
+			observer.observe(self, config);
+			
+			/* later, you can stop observing */
+			/*observer.disconnect();*/
+		} catch(e) {
+			/* old browsers: deprecated */
+			self.addEventListener('DOMNodeInserted', function (ev) {
+				/* first let's revalidate children nodes */
+				validateChildren();
+				
+				/* add listeners, but only if it is relevant */
+				if (itemList.indexOf(ev.target) >= 0) setupItem(ev.target);
+			}, false);
+		}
+		
+		/* 
+		 * public methods
+		 */
+		
+		var that = {};
+		
+		/* we need to init the properties first */
+		Object.defineProperty(that, 'timingContainer', {
+			get : function() {
+				if (voided) return;
+				
+				return 'par';
+			},
+			set : function(newValue) {
+				if (voided) return;
+				
+				if (newValue == 'par') return;
+				else if (newValue == 'seq') {
+					var playState = settings.timingPlayState;
+					
+					/* stop current */
+					this.stop;
+					voided = true;
+					
+					/* create a new container with current settings */
+					settings.timingContainer = 'seq';
+					var newSeq = new TSSSeq(settings);
+					/* replace reference */
+					that = newSeq;
+					extend(settings.domNode.style, that, true);
+					
+					that.timingPlayState = playState;
+				}
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'timingDelay', {
+			get : function() {
+				return settings.timingDelay != null ? (parseFloat(settings.timingDelay)) : 0.0;
+			},
+			set : function(newValue) { 
+				if (newValue == null) return;
+				
+				settings.timingDelay = newValue != null ? parseFloat(newValue) : 0.0;
+				
+				if (!begun) currentTime = settings.timingDelay != null ? (-1.0 * parseFloat(settings.timingDelay)) : 0.0;
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'timingDuration', {
+			get : function() {
+				/* has the duration been explicitly defined? */
+				if (dur)
+					return dur;
+				
+				/* no items? */
+				if (itemList.length == 0)
+					return 'infinite';	/* infinity */
+				
+				/* if none of the previous, we should compute duration based on its children */
+				var maxDur = 0;
+				for (var i=0;i&lt;itemList.length;i++) {
+					var aux = itemList[i].style.timingDuration;
+					if (aux == 'infinite' || maxDur == 'infinite') return 'infinite';
+					maxDur = Math.max(maxDur, aux);
+				}
+				return maxDur;
+			},
+			set : function(newValue) {
+				if (newValue == null) return;
+				
+				dur = newValue == 'infinite' ? 9007199254740992 : parseFloat(newValue);
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'timingIterationCount', {
+			get : function() {
+				return repeatCount == 9007199254740992 ? 'infinite' : repeatCount;
+			},
+			set : function(newValue) {
+				if (newValue == null) return;
+				
+				repeatCount = newValue == 'infinite' ? 
+					9007199254740992 : parseInt(newValue);
+				repeatInstance = repeatCount;
+				
+				/* test if this should be the last repetition */
+				if (repeatCount &lt;= 0 &amp;&amp; !paused) {
+					this.stop;
+				}
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'timingPlayState', {
+			get : function() {
+				return settings.timingPlayState;
+			},
+			set : function(newValue) {
+				if (newValue == 'paused') { settings.timingPlayState = newValue; this.pause; }
+				else if (newValue == 'running') { settings.timingPlayState = newValue; this.play; }
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'timingSyncMaster', {
+			get : function() {
+				return settings.timingSyncMaster;
+			},
+			set : function(newValue) {
+				if (newValue == null) return;
+				
+				/* todo */
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		/* non-standard properties (implementation dependent) */
+ 		
+ 		/* init method */
+		Object.defineProperty(that, 'initialize', {
+			get : function() {
+				if (initiated)
+					return;
+				
+				self.setAttribute('tss-state', 'not-active');
+				
+				var that = this;
+				self.bind('tempoupdate', timeUpdateListener, true);
+				
+				/* Oops, it has a sync master */
+				if (settings.timingSyncMaster) {
+					try {
+						findSyncMaster(settings.timingSyncMaster).bind(TSS_TIMEUPDATE_EVENT, timeUpdateListener);
+					} catch (e) {}
+				}
+				/* otherwise, register to external updates */
+				else window.tempo.add(self);
+				
+				initiated = true;
+			},
+			set : function() {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		 		
+ 		/* destroy command */
+ 		Object.defineProperty(that, 'destroy', {
+			get : function() {
+				if (initiated) {
+					window.tempo.remove(self);
+					
+					for (var i=0;i&lt;itemList.length;i++) {
+						itemList[i].style.destroy;
+					}
+				}
+				
+				self.unbind(TSS_PLAY_EVENT + ' ' + TSS_PAUSE_EVENT + ' ' + TSS_BEGIN_EVENT + ' ' + TSS_END_EVENT + ' ' + 'tempoupdate' + ' ' + TSS_YIELD_EVENT);
+				
+				return delete self;
+			},
+			set : function() {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		/* play command */
+ 		Object.defineProperty(that, 'play', {
+			get : function() {
+				if (begun &amp;&amp; !paused)		/* begun &amp;&amp; playing */
+					return;
+				
+				/* do we need to restart all children? */
+				var restart = ended;
+				/* has it been initialized? */
+				this.initialize;
+				
+				/* element should stay paused */
+				if (!ended &amp;&amp; settings.timingPlayState == 'paused') return;
+				/* REVIEW IT */
+				else settings.timingPlayState = 'running';
+				
+				if (currentTime &lt; 0) {
+					delayComputed = false;
+				}
+				
+				self.trigger(TSS_PLAY_EVENT);
+				
+				/* play children only after initial delay */
+				if (delayComputed) {
+					/* all children ended? */
+					var allEnded = true;
+					for (var i=0;i&lt;itemList.length;i++) {
+						if (itemList[i].style.begun &amp;&amp; !itemList[i].style.ended) {
+							allEnded = false;
+							break;
+						}
+					}
+					
+					for (var i=0;i&lt;itemList.length;i++) {
+						if (!itemList[i].style.ended || restart || 
+							(allEnded &amp;&amp; (typeof dur != 'number' || currentTime &lt; dur))) itemList[i].style.play;
+					}
+				}
+			},
+			set : function(force) {},
+			enumerable: true,
+			configurable: true
+ 		});
+		
+		/* pause command */
+ 		Object.defineProperty(that, 'pause', {
+			get : function() {
+				if (paused) return;
+				
+				self.trigger(TSS_PAUSE_EVENT);
+				
+				for (var i=0;i&lt;itemList.length;i++) {
+					itemList[i].style.pause;
+				}
+			},
+			set : function() {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		/* stop command */
+ 		Object.defineProperty(that, 'stop', {
+			get : function() {
+				if (!begun)
+					return;
+				
+				if (!ended) {
+					repeatInstance = -1;
+					self.trigger(TSS_END_EVENT);
+					
+					for (var i=0;i&lt;itemList.length;i++) {
+						itemList[i].style.stop;
+					}
+				}
+			},
+			set : function() {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'begun', {
+			get : function() {
+				return begun;
+			},
+			set : function() {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'ended', {
+			get : function() {
+				return ended;
+			},
+			set : function() {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'playing', {
+			get : function() {
+				return !paused;
+			},
+			set : function() {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+		Object.defineProperty(that, 'paused', {
+			get : function() {
+				return paused;
+			},
+			set : function() {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'waiting', {
+			get : function() {
+				return waiting;
+			},
+			set : function() {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'canplay', {
+			get : function() {
+				return canplay;
+			},
+			set : function() {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'currentTime', {
+			get : function() {
+				return currentTime;
+			},
+			set : function(t) {
+				/* is it playing? If not, we need to play first */
+				if (!begun || ended) {
+					this.play;
+					this.pause;
+				}
+				
+				t = parseFloat(t);
+				
+				if (typeof t == 'number' &amp;&amp; !isNaN(t)) {
+					currentTime = t;
+				}
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		return that;
+	}
+	
+	TSSSeq = function(options) {
+		/* default options */
+		var settings = extend(options, {
+			timingDelay:			null,
+			timingDuration:			null,
+			timingIterationCount:	1,
+			timingPlayState:		null,
+			timingSyncMaster:		null,
+			domNode:				null,
+			parent:					null
+		});
+		
+		/* 
+		 * private variables 
+		 */
+		
+		/* keep self reference */
+		var self = settings.domNode;
+		
+		/* before doing anything, test wether this node has already been instantiated */
+		if (Object.getOwnPropertyDescriptor(self.style, 'timingDelay') &amp;&amp; self.style.timingContainer) {
+			if (self.style.timingContainer != 'seq') {
+				self.style.timingContainer = settings.timingContainer;
+			}
+			
+			/* element has already been extended with timing properties */
+			if (self.style.timingDelay != settings.timingDelay) self.style.timingDelay = settings.timingDelay;
+			if (self.style.timingDuration != settings.timingDuration) self.style.timingDuration = settings.timingDuration;
+			if (self.style.timingIterationCount != settings.timingIterationCount) self.style.timingIterationCount = settings.timingIterationCount;
+			if (self.style.timingPlayState != settings.timingPlayState) self.style.timingPlayState = settings.timingPlayState;
+			if (self.style.timingSyncMaster != settings.timingSyncMaster) self.style.timingSyncMaster = settings.timingSyncMaster;
+			
+			return null;
+		}
+		
+		/* control properties */
+		var voided = false;
+		var initiated = false;
+		var begun = false;
+		var paused = true;
+		var ended = false;
+		var error = false;
+		var waiting = false;
+		var canplay = true;
+		
+		/* presentation properties */
+		var dur = settings.timingDuration ? parseFloat(settings.timingDuration) : settings.timingDuration;
+		var repeatCount = settings.timingIterationCount == 'infinite' ? 
+			9007199254740992 : parseInt(settings.timingIterationCount);
+		var repeatInstance = repeatCount;
+		
+		/* other presentation properties */
+		var muted = false;
+		var playbackRate = 1.0;
+		var currentTime = settings.timingDelay != null ? (-1.0 * parseFloat(settings.timingDelay)) : 0.0;
+		var delayComputed = true;
+		
+		/* list of items to be played in parallel */
+		var itemList = [];
+		/* index of current being played */
+		var itemIndex = -1;
+		/* current item being played */
+		var currItem = null;
+		
+		/* mutation observer */
+		var observer;
+		
+		/* start with not active element even before initialization */
+		self.setAttribute('tss-state', 'not-active');
+		
+		/* we need to define this function in the scope of the object */
+		function timeUpdateListener(event) {
+			event.stopPropagation();
+			
+			if (event.type == TSS_TIMEUPDATE_EVENT) {
+				var newTime = event.detail;
+				var delay = settings.timingDelay != null ? (1.0 * parseFloat(settings.timingDelay)) : 0.0;
+				currentTime = newTime - delay;
+				
+				if (begun &amp;&amp; currentTime &lt; 0) {
+					/* clean the house */
+					self.setAttribute('tss-state', 'not-active');
+					delayComputed = false;
+				}
+				
+				if (ended &amp;&amp; newTime &lt;= delay + dur)
+					that.currentTime = newTime - delay;
+			}
+			else if (begun &amp;&amp; !paused) {			/* begun &amp;&amp; playing */
+				currentTime = currentTime + event.detail/1000.0;
+			}
+			
+			if (!delayComputed &amp;&amp; currentTime >=0) {
+				delayComputed = true;
+				begun = false; 				/* review: is it the best way? */
+				that.play;
+			}
+			
+			if (begun &amp;&amp; !ended &amp;&amp; typeof dur == 'number' &amp;&amp; currentTime >= dur) {
+				currentTime = 0;
+				
+				/* we must skip the currItem yieldEvent */
+				ended = true;
+				if (currItem) currItem.style.stop;				
+				self.trigger(TSS_END_EVENT);
+			}
+			
+			if (paused) return;
+			
+			/* notify time update handlers */
+			self.trigger(TSS_TIMEUPDATE_EVENT, currentTime);
+			
+			/* is there an event attribute? If so, let's run it */
+			var evtAttr = self.getAttribute(TSS_TIMEUPDATE_EVENT);
+			if (evtAttr) {
+				try {
+					eval(evtAttr);
+				} catch (e) {}
+			}
+		}
+		
+		/* 
+		 * public events
+		 */
+		
+		var f;
+		
+		/* play event */
+		self.bind(TSS_PLAY_EVENT, f = function(event) {
+			event.stopPropagation();
+			
+			/* make sure it will not be active */
+			if (voided) {
+				self.unbind(TSS_PLAY_EVENT, f);
+				return;
+			}
+			
+			paused = false;
+			
+			/* is there an event attribute? If so, let's run it */
+			var evtAttr = self.getAttribute(TSS_PLAY_EVENT);
+			if (evtAttr) {
+				try {
+					eval(evtAttr);
+				} catch (e) {}
+			}
+			
+			if (!begun) {
+				begun = true;
+				ended = false;
+				self.trigger(TSS_BEGIN_EVENT);
+			}
+		}, false);
+	
+		/* pause event */
+		self.bind(TSS_PAUSE_EVENT, f = function(event) {
+			event.stopPropagation();
+			
+			/* make sure it will not be active */
+			if (voided) {
+				self.unbind(TSS_PAUSE_EVENT, f);
+				return;
+			}
+			
+			paused = true;
+			
+			/* is there an event attribute? If so, let's run it */
+			var evtAttr = self.getAttribute(TSS_PAUSE_EVENT);
+			if (evtAttr) {
+				try {
+					eval(evtAttr);
+				} catch (e) {}
+			}
+		}, false);
+	
+		/* begin event */
+		self.bind(TSS_BEGIN_EVENT, f = function(event) {
+			event.stopPropagation();
+			
+			/* make sure it will not be active */
+			if (voided) {
+				self.unbind(TSS_BEGIN_EVENT, f);
+				return;
+			}
+			
+			if (delayComputed) {
+				/* set pseudo-class */
+				self.setAttribute('tss-state', 'active');
+			}
+			
+			/* is there an event attribute? If so, let's run it */
+			var evtAttr = self.getAttribute(TSS_BEGIN_EVENT);
+			if (evtAttr) {
+				try {
+					eval(evtAttr);
+				} catch (e) {}
+			}
+		}, false);
+	
+		/* end event */
+		self.bind(TSS_END_EVENT, f = function(event) {
+			event.stopPropagation();
+			
+			/* make sure it will not be active */
+			if (voided) {
+				self.unbind(TSS_END_EVENT, f);
+				return;
+			}
+			
+			paused = true;
+			begun = false;
+			ended = true;
+			waiting = false;
+			canplay = true;
+			
+			/* is there an event attribute? If so, let's run it */
+			var evtAttr = self.getAttribute(TSS_END_EVENT);
+			if (evtAttr) {
+				try {
+					eval(evtAttr);
+				} catch (e) {}
+			}
+			
+			/* reset the time anyway */
+			currentTime = settings.timingDelay != null ? (-1.0 * parseFloat(settings.timingDelay)) : 0.0;
+			
+			/* clean the house */
+			self.setAttribute('tss-state', 'not-active');
+			
+			/* does it have a repeatCount? */
+			repeatInstance--;
+			if (repeatInstance &lt;= 0) {
+				/* REVIEW IT */
+				settings.timingPlayState = 'paused';
+				
+				repeatInstance = repeatCount;
+				self.trigger(TSS_YIELD_EVENT);
+				
+				if (!settings.timingSyncMaster) window.tempo.remove(self);
+				initiated = false;
+				delayComputed = true;
+				itemIndex = -1;
+				currItem = null;
+				self.unbind('tempoupdate');
+			}
+			else {
+				/* go back to square one */
+				currItem = null;
+				that.play;
+			}
+		}, false);
+		
+		/* 
+		 * private methods
+		 */
+		
+		/* return the index of the current item */
+		var getCurrItemIndex = function() {
+			return itemIndex;
+		}
+		
+		/* return the index of a given item */
+		var getItemIndex = function(item) {
+			for(var i=0;i&lt;itemList.length;i++) {
+				if (itemList[i] == item)
+					return i;
+			}
+			return -1;
+		}
+		
+		/* prepare children */
+		var setupItem = function(elem) {
+			var item = elem;
+			
+			if (!elem) return;
+			
+			/* begin event */
+			elem.bind(TSS_BEGIN_EVENT, function(event) {
+				event.stopPropagation();
+				
+				/* make sure it will not be active */
+				if (voided) {
+					self.unbind(TSS_BEGIN_EVENT, this);
+					return;
+				}
+			});
+			
+			/* play event */
+			elem.bind(TSS_PLAY_EVENT, function(event) {
+				event.stopPropagation();
+				
+				/* make sure it will not be active */
+				if (voided) {
+					self.unbind(TSS_PLAY_EVENT, this);
+					return;
+				}
+				
+				/* first item. Just in case we play this item instead of container */
+				if (!begun) {
+					itemIndex = getItemIndex(item);
+					currItem = itemList[itemIndex];
+				} 
+				
+				itemIndex = getItemIndex(item);
+				currItem = itemList[itemIndex];
+				
+				for(var i=0;i&lt;itemList.length;i++) {
+					if (i != itemIndex &amp;&amp; itemList[i].style.playing) {
+						itemList[i].style.stop;
+					}
+				}
+				
+				if (paused) self.trigger(TSS_PLAY_EVENT);
+			});
+		
+			/* pause event */
+			elem.bind(TSS_PAUSE_EVENT, function(event) {
+				event.stopPropagation();
+				
+				/* make sure it will not be active */
+				if (voided) {
+					self.unbind(TSS_PAUSE_EVENT, this);
+					return;
+				}
+				
+				/* we should not propagate a pause event */
+				/*if (!paused) self.trigger(TSS_PAUSE_EVENT);*/
+			});
+			
+			/* end event */
+			/* we should look at the yieldEvent instead of the endEvent */
+			elem.bind(TSS_YIELD_EVENT, function(event) {
+				event.stopPropagation();
+				
+				/* make sure it will not be active */
+				if (voided) {
+					self.unbind(TSS_YIELD_EVENT, this);
+					return;
+				}
+				
+				if (ended) return;
+				
+				/* what a hack: did it end by itself? */
+				if (getCurrItemIndex() != getItemIndex(item)) {
+					/* get me out of here */
+					return;
+				}
+				
+				/* last item */
+				if (getCurrItemIndex() == itemList.length - 1) {
+					itemIndex = -1;
+					currItem = null;
+					
+					/* we only trigger this end event if duration has not been defined */
+					if (typeof dur != 'number') self.trigger(TSS_END_EVENT);
+				}
+				/* all the other items */
+				else {
+					itemIndex = itemIndex + 1;
+					currItem = itemList[itemIndex];
+					if (currItem.style.paused) currItem.style.play;
+				}
+			});
+			
+			/* waiting event */
+			elem.bind(TSS_WAIT_EVENT, function(event) {
+				event.stopPropagation();
+				
+				/* make sure it will not be active */
+				if (voided) {
+					self.unbind(TSS_WAIT_EVENT, this);
+					return;
+				}
+				
+				waiting = true;
+				canplay = false;
+				
+				/* trigger own waiting event */
+				self.trigger(TSS_WAIT_EVENT);
+			});
+			
+			/* canplay event */
+			elem.bind(TSS_CAN_PLAY_EVENT, function(event) {
+				event.stopPropagation();
+				
+				/* make sure it will not be active */
+				if (voided) {
+					self.unbind(TSS_CAN_PLAY_EVENT, this);
+					return;
+				}
+				
+				/* only change state if this is the current item triggered the event */
+				if (getCurrItemIndex() != getItemIndex(item)) {
+					/* get me out of here */
+					return;
+				}
+				
+				waiting = false;
+				canplay = true;
+				
+				/* trigger own waiting event */
+				self.trigger(TSS_CAN_PLAY_EVENT);
+			});
+		}
+		
+		/* go through children nodes */
+		var validateChildren = function() {
+			itemList = [];
+			
+			if (self.hasChildNodes()) {
+				var child = self.firstChild;
+				while (child) {
+					/* is it a valid element */
+					if (child.nodeType === 1 &amp;&amp; 
+						child.nodeName != 'SCRIPT' &amp;&amp;
+						child.nodeName != 'LINK' &amp;&amp;
+						child.nodeName != 'STYLE' &amp;&amp;
+						child.nodeName != 'SOURCE' &amp;&amp;
+						child.nodeName != 'TIME') {
+						if (Object.getOwnPropertyDescriptor(child.style, 'timingDelay')) {
+							/* element has already been extended with timing properties */
+						}
+						else {
+							var item = parseItem(child, self);
+							extend(child.style, item);
+						}
+						itemList.push(child);
+					}
+					child = child.nextSibling;
+				}
+			}
+		}
+		validateChildren();
+		
+		for (var i=0;i&lt;itemList.length;i++) {
+			var child = itemList[i];
+			setupItem(child);
+		}
+		
+		/* new browsers */
+		try {
+			/* create an observer instance
+			   source: https://developer.mozilla.org/en/docs/Web/API/MutationObserver 
+			*/
+			observer = new MutationObserver(function(mutations) {
+				mutations.forEach(function(mutation) {
+					var target = mutation.target; /* target node */
+					
+					switch (mutation.type) {
+						case 'childList':
+							/* first let's revalidate children nodes */
+							validateChildren();
+							
+							/* now, process new elements */
+							for (var i=0; i&lt;mutation.addedNodes.length; i++) {
+								var child = mutation.addedNodes[i];
+								/* add listeners, but only if it is relevant */
+								if (itemList.indexOf(child) >= 0) setupItem(child);
+							}
+							
+							/* process removed elements */
+							for (var i=0; i&lt;mutation.removedNodes.length; i++) {
+								var child = mutation.removedNodes[i];
+							}
+							break;
+						case 'attributes':
+							if (mutation.attributeName == 'style') {
+								/* we need to check whether a TSS property has been updated */
+							}
+							break;
+						default:
+							break;
+					}
+				});
+			});
+			
+			/* configuration of the observer */
+			var config = { attributes: true, childList: true, characterData: true/*, subtree: true*/ };
+			
+			/* pass in the target node, as well as the observer options */
+			observer.observe(self, config);
+			
+			/* later, you can stop observing */
+			/*observer.disconnect();*/
+		} catch(e) {
+			/* old browsers: deprecated */
+			self.addEventListener('DOMNodeInserted', function (ev) {
+				/* first let's revalidate children nodes */
+				validateChildren();
+				
+				/* add listeners, but only if it is relevant */
+				if (itemList.indexOf(ev.target) >= 0) setupItem(ev.target);
+			}, false);
+		}
+		
+		/* 
+		 * public methods
+		 */		
+		
+		var that = {};
+		
+		/* we need to init the properties first */
+		Object.defineProperty(that, 'timingContainer', {
+			get : function() {
+				if (voided) return;
+				
+				return 'seq';
+			},
+			set : function(newValue) {
+				if (voided) return;
+				
+				if (newValue == 'seq') return;
+				else if (newValue == 'par') {
+					var playState = settings.timingPlayState;
+					
+					/* stop current */
+					this.stop;
+					voided = true;
+					
+					/* create a new container with current settings */
+					settings.timingContainer = 'par';
+					var newPar = new TSSPar(settings);
+					/* replace reference */
+					that = newPar;
+					extend(settings.domNode.style, that, true);
+					
+					that.timingPlayState = playState;
+				}
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'timingDelay', {
+			get : function() {
+				return settings.timingDelay != null ? (parseFloat(settings.timingDelay)) : 0.0;
+			},
+			set : function(newValue) {
+				if (newValue == null) return;
+				
+				settings.timingDelay = newValue != null ? parseFloat(newValue) : 0.0;
+				
+				if (!begun) currentTime = settings.timingDelay != null ? (-1.0 * parseFloat(settings.timingDelay)) : 0.0;
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'timingDuration', {
+			get : function() {
+				/* has the duration been explicitly defined? */
+				if (dur)
+					return dur;
+				
+				/* no items? */
+				if (itemList.length == 0)
+					return 9007199254740992;	/* infinity */
+				
+				/* if none of the previous, we should compute duration based on its children */
+				var childrenDur = 0;
+				for (var i=0; i&lt;itemList.length; i++) {
+					var aux = itemList[i].style.timingDuration;
+					if (aux == 'infinite') return aux;
+					childrenDur += aux;
+				}
+				return childrenDur;
+			},
+			set : function(newValue) {
+				if (newValue == null) return;
+				
+				dur = newValue == 'infinite' ? 9007199254740992 : parseFloat(newValue);
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'timingIterationCount', {
+			get : function() {
+				return repeatCount == 9007199254740992 ? 'infinite' : repeatCount;
+			},
+			set : function(newValue) {
+				if (newValue == null) return;
+				
+				repeatCount = newValue == 'infinite' ? 
+					9007199254740992 : parseInt(newValue);
+				repeatInstance = repeatCount;
+				
+				/* test if this should be the last repetition */
+				if (repeatCount &lt;= 0 &amp;&amp; !paused) {
+					this.stop;
+				}
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'timingPlayState', {
+			get : function() {
+				return settings.timingPlayState;
+			},
+			set : function(newValue) {
+				if (newValue == 'paused') { settings.timingPlayState = newValue; this.pause; }
+				else if (newValue == 'running') { settings.timingPlayState = newValue; this.play; }
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'timingSyncMaster', {
+			get : function() {
+				return settings.timingSyncMaster;
+			},
+			set : function(newValue) {
+				if (newValue == null) return;
+				
+				/* todo */
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		/* non-standard properties (implementation dependent) */
+ 		
+		/* init method */
+		Object.defineProperty(that, 'initialize', {
+			get : function() {
+				if (initiated)
+					return;
+				
+				self.setAttribute('tss-state', 'not-active');
+				
+				var that = this;
+				self.bind('tempoupdate', timeUpdateListener);
+				
+				/* Oops, it has a sync master */
+				if (settings.timingSyncMaster) {
+					try {
+						findSyncMaster(settings.timingSyncMaster).bind(TSS_TIMEUPDATE_EVENT, timeUpdateListener);
+					} catch (e) {}
+				}
+				/* register to external updates */
+				else window.tempo.add(self);
+				
+				initiated = true;
+			},
+			set : function() {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		/* destroy command */
+ 		Object.defineProperty(that, 'destroy', {
+			get : function() {
+				if (initiated) {
+					window.tempo.remove(self);
+					
+					for (var i=0;i&lt;itemList.length;i++) {
+						itemList[i].style.destroy;
+					}
+				}
+			
+				self.unbind(TSS_PLAY_EVENT + ' ' + TSS_PAUSE_EVENT + ' ' + TSS_BEGIN_EVENT + ' ' + TSS_END_EVENT + ' ' + 'tempoupdate' + ' ' + TSS_YIELD_EVENT);
+				
+				return delete self;
+			},
+			set : function() {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		/* play command */
+ 		Object.defineProperty(that, 'play', {
+			get : function() {
+				if (begun &amp;&amp; !paused)		/* begun &amp;&amp; playing */
+					return;
+				
+				/* has it been initialized? */
+				this.initialize;
+				
+				/* element should stay paused */
+				if (!ended &amp;&amp; settings.timingPlayState == 'paused') return;
+				/* REVIEW IT */
+				else settings.timingPlayState = 'running';
+				
+				if (currentTime &lt; 0) {
+					delayComputed = false;
+				}
+				
+				self.trigger(TSS_PLAY_EVENT);
+				
+				/* play children only after initial delay */
+				if (delayComputed) {
+					
+					if (itemList.length > 0) {
+						/* do we have a current item? */
+						if (!currItem) {
+							itemIndex = 0;
+							currItem = itemList[itemIndex];
+						}
+						
+						currItem.style.play;
+					}
+				}
+			},
+			set : function(force) {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		/* pause command */
+ 		Object.defineProperty(that, 'pause', {
+			get : function() {
+				self.trigger(TSS_PAUSE_EVENT);
+				
+				if (currItem) currItem.style.pause;
+			},
+			set : function() {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		/* stop command */
+ 		Object.defineProperty(that, 'stop', {
+			get : function() {
+				if (!begun)
+					return;
+				
+				if (!ended) {
+					var item = currItem;
+					repeatInstance = -1;
+					self.trigger(TSS_END_EVENT);
+					
+					if (item) item.style.stop;
+				}
+			},
+			set : function() {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'begun', {
+			get : function() {
+				return begun;
+			},
+			set : function() {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'ended', {
+			get : function() {
+				return ended;
+			},
+			set : function() {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'playing', {
+			get : function() {
+				return !paused;
+			},
+			set : function() {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'paused', {
+			get : function() {
+				return paused;
+			},
+			set : function() {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'waiting', {
+			get : function() {
+				return waiting;
+			},
+			set : function() {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'canplay', {
+			get : function() {
+				return canplay;
+			},
+			set : function() {},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'currentTime', {
+			get : function() {
+				return currentTime;
+			},
+			set : function(t) {
+				/* is it playing? If not, we need to play first */
+				if (!begun || ended) {
+					this.play;
+					this.pause;
+				}
+				
+				t = parseFloat(t);
+				
+				if (typeof t == 'number' &amp;&amp; !isNaN(t)) {
+					currentTime = t;
+				}
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		return that;
+	}
+	
+	TSSMedia = function(options) {
+		/* default options */
+		var settings = extend(options, {
+			timingDelay:			null,
+			timingDuration:			null,
+			timingIterationCount:	1,
+			timingPlayState:		null,
+			timingClipBegin:		0,
+			timingClipEnd:			9007199254740992, /* infinity */
+			timingVolume:			null,
+			timingSyncMaster:		null,
+			domNode:				null,
+			parent:					null
+		});
+		
+		/* 
+		 * private variables 
+		 */
+		
+		/* keep self reference */
+		var self = settings.domNode;
+		
+		/* before doing anything, test wether this node has already been instantiated */
+		if (Object.getOwnPropertyDescriptor(self.style, 'timingDelay')) {
+			/* element has already been extended with timing properties */
+			if (self.style.timingDelay != settings.timingDelay) self.style.timingDelay = settings.timingDelay;
+			if (self.style.timingDuration != settings.timingDuration) self.style.timingDuration = settings.timingDuration;
+			if (self.style.timingIterationCount != settings.timingIterationCount) self.style.timingIterationCount = settings.timingIterationCount;
+			if (self.style.timingPlayState != settings.timingPlayState) self.style.timingPlayState = settings.timingPlayState;
+			if (self.style.timingSyncMaster != settings.timingSyncMaster) self.style.timingSyncMaster = settings.timingSyncMaster;
+			
+			return null;
+		}
+		
+		/* control properties */
+		var initiated = false;
+		var begun = false;
+		var paused = true;
+		var ended = false;
+		var error = false;
+		var waiting = false;
+		var canplay = true;
+		
+		/* media type: continuous (0) or discrete (1) */
+		var media_type = settings.domNode.nodeType === 1 &amp;&amp; 
+						(settings.domNode.nodeName == 'VIDEO' || 
+						settings.domNode.nodeName == 'AUDIO') ? 0 : 1;
+		
+		/* presentation properties */
+		var clipBegin = parseFloat(settings.timingClipBegin);
+		var clipEnd = parseFloat(settings.timingClipEnd);
+		var dur = settings.timingDuration ? 
+				parseFloat(settings.timingDuration) : 
+				media_type == 1 ? 									/* is discrete? */
+					9007199254740992 :								/* infinity */
+					typeof clipBegin == 'number' &amp;&amp; typeof clipEnd == 'number' ?
+						clipEnd - clipBegin : 9007199254740992;		/* infinity */
+		var repeatCount = settings.timingIterationCount == 'infinite' ? 
+			9007199254740992 : parseInt(settings.timingIterationCount);
+		var repeatInstance = repeatCount;
+		
+		/* other presentation properties */
+		var muted = false;
+		var volume = settings.timingVolume ? parseFloat(settings.timingVolume) : null;
+		var playbackRate = 1.0;
+		var currentTime = settings.timingDelay != null ? (-1.0 * parseFloat(settings.timingDelay)) : 0.0;
+		var delayComputed = true;
+		
+		/* start with not active element even before initialization */
+		self.setAttribute('tss-state', 'not-active');
+		
+		/* we need to define this function in the scope of the object */
+		function timeUpdateListener(event) {
+			event.stopPropagation();
+			
+			if (media_type == 0) {
+				this.currentTime = event.detail;
+			}
+			else {
+				if (event.type == TSS_TIMEUPDATE_EVENT) {
+					var newTime = event.detail;
+					var delay = settings.timingDelay != null ? (1.0 * parseFloat(settings.timingDelay)) : 0.0;
+					currentTime = newTime - delay;
+					
+					if (begun &amp;&amp; currentTime &lt; 0) {
+						/* clean the house */
+						self.setAttribute('tss-state', 'not-active');
+						delayComputed = false;
+					}
+					
+					if (ended &amp;&amp; newTime &lt;= delay + dur)
+						that.currentTime = newTime - delay;
+				}
+				/* this is a tempoupdate event */
+				else if ((begun &amp;&amp; !paused)) {		/* begun &amp;&amp; playing */
+					currentTime = currentTime + event.detail/1000.0;
+				}
+				
+				if (!delayComputed &amp;&amp; currentTime >= 0) {
+					delayComputed = true;
+					/* unregister right away if it is continuous media */
+					if (media_type == 0) window.tempo.remove(self);
+					begun = false; 				/* review: is it the best way for the delay? */
+					that.play;
+				}
+				
+				if (begun &amp;&amp; !ended &amp;&amp; currentTime >= dur) {
+					currentTime = settings.timingDelay != null ? (-1.0 * parseFloat(settings.timingDelay)) : 0.0;
+					self.trigger(TSS_END_EVENT);
+				}
+				
+				if (paused) return;
+				
+				/* notify time update handlers */
+				self.trigger(TSS_TIMEUPDATE_EVENT, currentTime);
+				
+				/* is there an event attribute? If so, let's run it */
+				var evtAttr = self.getAttribute(TSS_TIMEUPDATE_EVENT);
+				if (evtAttr) {
+					try {
+						eval(evtAttr);
+					} catch (e) {}
+				}
+			}
+		}
+		
+		/*
+		 * public events
+		 */
+		 
+		/* play event */
+		self.bind(TSS_PLAY_EVENT, function(event) {
+			event.stopPropagation();
+			
+			paused = false;
+			
+			/* is there an event attribute? If so, let's run it */
+			var evtAttr = self.getAttribute(TSS_PLAY_EVENT);
+			if (evtAttr) {
+				try {
+					eval(evtAttr);
+				} catch (e) {}
+			}
+			
+			if (!begun) {
+				begun = true;
+				ended = false;
+				self.trigger(TSS_BEGIN_EVENT);
+			}
+		}, false);
+		
+		/* pause event */
+		self.bind(TSS_PAUSE_EVENT, function(event) {
+			event.stopPropagation();
+			
+			if (canplay) paused = true;
+			
+			/* is there an event attribute? If so, let's run it */
+			var evtAttr = self.getAttribute(TSS_PAUSE_EVENT);
+			if (evtAttr) {
+				try {
+					eval(evtAttr);
+				} catch (e) {}
+			}
+		}, false);
+		
+		/* begin event */
+		self.bind(TSS_BEGIN_EVENT, function(event) {
+			event.stopPropagation();
+			
+			if (delayComputed) {
+				/* set volume on begin. It will affect continuous media */
+				if (volume) that.volume = volume;
+				/* set pseudo-class */
+				self.setAttribute('tss-state', 'active');
+			}
+			
+			/* is there an event attribute? If so, let's run it */
+			var evtAttr = self.getAttribute(TSS_BEGIN_EVENT);
+			if (evtAttr) {
+				try {
+					eval(evtAttr);
+				} catch (e) {}
+			}
+		}, false);
+		
+		/* end event */
+		self.bind(TSS_END_EVENT, function(event) {
+			event.stopPropagation();
+			
+			paused = true;
+			begun = false;
+			ended = true;
+			
+			/* is there an event attribute? If so, let's run it */
+			var evtAttr = self.getAttribute(TSS_END_EVENT);
+			if (evtAttr) {
+				try {
+					eval(evtAttr);
+				} catch (e) {}
+			}
+			
+			/* reset the time anyway */
+			currentTime = settings.timingDelay != null ? (-1.0 * parseFloat(settings.timingDelay)) : 0.0;
+			
+			/* clean the house */
+			self.setAttribute('tss-state', 'not-active');
+			
+			/* does it have a repeatCount? */
+			repeatInstance--;
+			if (repeatInstance &lt;= 0) {
+				/* REVIEW IT */
+				settings.timingPlayState = 'paused';
+				/* canplay = false;*/
+				waiting = false;
+				
+				repeatInstance = repeatCount;
+				
+				/*self.unbind('play pause ended timeupdate');*/
+				/*if (settings.timingSyncMaster) 
+					findSyncMaster(settings.timingSyncMaster).unbind(TSS_TIMEUPDATE_EVENT, timeUpdateListener);*/
+				if (!settings.timingSyncMaster)  window.tempo.remove(self);
+				initiated = false;
+				delayComputed = true;
+				self.unbind('tempoupdate');
+				
+				self.trigger(TSS_YIELD_EVENT);
+			}
+			else {
+				canplay = true;
+				waiting = false;
+				that.play;
+			}
+		}, false);
+		
+		/*
+		 * public methods
+		 */
+		
+		/* public methods */
+		var that = {};
+		
+		/* we need to init the properties first */ 		
+ 		Object.defineProperty(that, 'timingDelay', {
+			get : function() {
+				return settings.timingDelay != null ? (parseFloat(settings.timingDelay)) : 0.0;
+			},
+			set : function(newValue) {
+				if (newValue == null) return;
+				
+				settings.timingDelay = newValue != null ? parseFloat(newValue) : 0.0;
+				
+				if (!begun) currentTime = settings.timingDelay != null ? (-1.0 * parseFloat(settings.timingDelay)) : 0.0;
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'timingDuration', {
+			get : function() {
+				/* continuous media */
+				if (media_type == 0)
+					return Math.min(dur, self.duration - clipBegin);
+				else return dur;
+			},
+			set : function(newValue) {
+				if (newValue == null) return;
+				
+				dur = newValue == 'infinite' ? 9007199254740992 : parseFloat(newValue);
+				settings.timingDuration = dur; 
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'timingIterationCount', {
+			get : function() {
+				return repeatCount == 9007199254740992 ? 'infinite' : repeatCount;
+			},
+			set : function(newValue) {
+				if (newValue == null) return;
+				
+				repeatCount = newValue == 'infinite' ? 
+					9007199254740992 : parseInt(newValue);
+				repeatInstance = repeatCount;
+				
+				/* test if this should be the last repetition */
+				if (repeatCount &lt;= 0 &amp;&amp; !paused) {
+					this.stop;
+				}
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'timingPlayState', {
+			get : function() {
+				return settings.timingPlayState;
+			},
+			set : function(newValue) {
+				if (newValue == 'paused') { settings.timingPlayState = newValue; this.pause; }
+				else if (newValue == 'running') { settings.timingPlayState = newValue; this.play; }
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'timingClipBegin', {
+			get : function() {
+				return clipBegin;
+			},
+			set : function(newValue) {
+				if (newValue == null) return;
+				
+				settings.timingClipBegin = newValue;
+				clipBegin = parseFloat(settings.timingClipBegin);
+				if (media_type == 0 &amp;&amp; !settings.timingDuration &amp;&amp; clipEnd) {
+					dur = typeof clipBegin == 'number' &amp;&amp; typeof clipEnd == 'number' ?
+							clipEnd - clipBegin : 9007199254740992;		/* infinity */
+					
+					/* set current time to clip begin */
+					if (!begun) that.currentTime = clipBegin; 
+				}
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'timingClipEnd', {
+			get : function() {
+				return clipEnd;
+			},
+			set : function(newValue) {
+				if (newValue == null) return;
+				
+				settings.timingClipEnd = newValue;
+				clipEnd = parseFloat(settings.timingClipEnd);
+				if (media_type == 0 &amp;&amp; !settings.timingDuration &amp;&amp; clipEnd) {
+					dur = typeof clipBegin == 'number' &amp;&amp; typeof clipEnd == 'number' ?
+							clipEnd - clipBegin : 9007199254740992;		/* infinity */
+				}
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'timingVolume', {
+			get : function() {
+				return volume;
+			},
+			set : function(v) {
+				if (newValue == null) return;
+				
+				v = parseFloat(v);
+				
+				if (typeof v == 'number' &amp;&amp; !isNaN(v)) {
+					volume = v;
+					settings.timingVolume = v;
+					
+					/* continuous media */
+					if (media_type == 0 &amp;&amp; initiated) {
+						self.volume = v;
+					}
+				}
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'timingSyncMaster', {
+			get : function() {
+				return settings.timingSyncMaster;
+			},
+			set : function(newValue) {
+				if (newValue == null) return;
+				
+				/* todo */
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		/* non-standard properties (implementation dependent) */
+ 		
+		/* init method */
+		Object.defineProperty(that, 'initialize', {
+			get : function() {
+				canplay = true;
+				
+				if (initiated)
+					return;
+				
+				self.setAttribute('tss-state', 'not-active');
+				
+				/* continuous media */
+				if (media_type == 0) {
+					var that = this;
+					
+					/* specific events */
+					self.bind('play', function(event) {
+						event.stopPropagation();
+						
+						if (!canplay) {
+							self.pause();
+							that.play;
+						}
+						
+						/* element should be running */
+						if (settings.timingPlayState == 'paused')
+							settings.timingPlayState = 'running';
+						
+						if (paused) self.trigger(TSS_PLAY_EVENT);
+					}, true);
+					
+					self.bind('pause', function(event) {
+						event.stopPropagation();
+						
+						/* what a hack: pause event might be triggered before end event */
+						if (self.ended)
+							return;
+							
+						if (!paused) self.trigger(TSS_PAUSE_EVENT);
+					}, true);
+					
+					self.bind('ended', function(event) {
+						event.stopPropagation();
+						
+						if (!ended) {
+							self.currentTime = clipBegin;
+							self.trigger(TSS_END_EVENT);
+						}
+					}, true);
+					
+					self.bind('timeupdate', function(event) {
+						event.stopPropagation();
+						
+						if (paused || !delayComputed) return;
+						
+						try {
+							if (self.currentTime &lt; clipBegin) {
+								self.currentTime = clipBegin;
+							}
+						} catch (e) {}
+						
+						if (self.currentTime >= clipBegin + dur ||
+							self.currentTime >= clipEnd) {
+							
+							/* we need to indicate to the pause event it should not be triggered. */
+							ended = true;
+							paused = true;
+							
+							self.pause();
+							self.currentTime = clipBegin;
+							self.trigger(TSS_END_EVENT);
+						}
+						
+						if (!ended &amp;&amp; delayComputed) currentTime = self.currentTime;
+						
+						/* notify time update handlers */
+						self.trigger(TSS_TIMEUPDATE_EVENT, currentTime);
+						
+						/* is there an event attribute? If so, let's run it */
+						var evtAttr = self.getAttribute(TSS_TIMEUPDATE_EVENT);
+						if (evtAttr) {
+							try {
+								eval(evtAttr);
+							} catch (e) {}
+						}
+					}, true);
+					
+					self.bind('seeking', function(event) {
+						event.stopPropagation();
+						
+						currentTime = self.currentTime;
+						
+						/* notify time update handlers */
+						self.trigger(TSS_TIMEUPDATE_EVENT, self.currentTime);
+					});
+					
+					/* Oops, it has a sync master */
+					if (settings.timingSyncMaster) {
+						try {
+							findSyncMaster(settings.timingSyncMaster).bind(TSS_TIMEUPDATE_EVENT, timeUpdateListener);
+						} catch (e) {}
+					}
+				}
+				
+				/* discrete media */
+				if (media_type == 1 || currentTime &lt; 0.0) {
+					var that = this;
+					self.bind('tempoupdate', timeUpdateListener, true);
+					
+					/* Oops, it has a sync master */
+					if (settings.timingSyncMaster) {
+						try {
+							findSyncMaster(settings.timingSyncMaster).bind(TSS_TIMEUPDATE_EVENT, timeUpdateListener);
+						} catch (e) {}
+					}
+					/* otherwise, register to tempo updates */
+					else window.tempo.add(self);
+				}
+								
+				initiated = true;
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		/* destroy command */
+ 		Object.defineProperty(that, 'destroy', {
+			get : function() {
+				if (initiated) {
+					window.tempo.remove(self);
+					if (self) self.remove();
+				}
+				
+				self.unbind(TSS_PLAY_EVENT + ' ' + TSS_PAUSE_EVENT + ' ' + TSS_BEGIN_EVENT + ' ' + TSS_END_EVENT + ' ' + 'tempoupdate' + ' ' + TSS_YIELD_EVENT);
+				
+				delete self;
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'play', {
+			get : function() {
+				if (begun &amp;&amp; !paused) /* begun &amp;&amp; playing */
+					return;
+				
+				/* has it been initialized? */
+				this.initialize;
+				
+				/* if play state is not defined we should follow the same HTML5 behavior 
+				   with no autoplay attribute
+				*/
+				if (media_type == 0 &amp;&amp; !settings.timingPlayState) {
+					settings.timingPlayState = 'paused';
+				}
+				
+				/* element should stay paused */
+				if (!ended &amp;&amp; settings.timingPlayState == 'paused') return;
+				/* REVIEW IT */
+				else settings.timingPlayState = 'running';
+				
+				if (canplay) {
+					if (currentTime >= 0) {
+						/* continuous media? */
+						if (media_type == 0) {
+							self.trigger(TSS_PLAY_EVENT);
+							self.play();
+						}
+						else self.trigger(TSS_PLAY_EVENT);
+					}
+					/* compute delay */
+					else {
+						delayComputed = false;
+						/* it starts all state variables but only plays after delay ends */
+						self.trigger(TSS_PLAY_EVENT);
+					}
+				}
+				else {
+					/* we need to wait to load media item */
+					waiting = true;
+					self.trigger(TSS_PAUSE_EVENT);
+					self.trigger(TSS_WAIT_EVENT);
+				}
+			},
+			set : function(force) {},
+			enumerable: true,
+			configurable: true
+ 		});
+		
+		Object.defineProperty(that, 'pause', {
+			get : function() {
+				if (!begun || (begun &amp;&amp; paused)) /* begun &amp;&amp; paused */
+					return;
+				
+				waiting = false;
+				
+				/* continuous media will trigger pauseEvent by itself */
+				if (media_type == 0 &amp;&amp; delayComputed) {
+					self.pause();
+				}
+				else if (!paused) self.trigger(TSS_PAUSE_EVENT);
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'stop', {
+			get : function() {
+				if (!begun)
+					return;
+				
+				if (media_type == 0) {
+					try {
+						self.pause();
+						self.currentTime = clipBegin;
+					} catch(e) {}
+				}
+				
+				if (!ended) {
+					repeatInstance = -1;
+					self.trigger(TSS_END_EVENT);
+				}
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'begun', {
+			get : function() {
+				return begun;
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'ended', {
+			get : function() {
+				return ended;
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'playing', {
+			get : function() {
+				return !paused;
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'paused', {
+			get : function() {
+				return paused;
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+		
+		Object.defineProperty(that, 'waiting', {
+			get : function() {
+				return waiting;
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'canplay', {
+			get : function() {
+				return canplay;
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+ 		
+ 		Object.defineProperty(that, 'volume', {
+			get : function() {
+				return volume;
+			},
+			set : function(v) {
+				v = parseFloat(v);
+				
+				if (typeof v == 'number' &amp;&amp; !isNaN(v)) {
+					volume = v;
+					
+					/* continuous media */
+					if (media_type == 0 &amp;&amp; initiated) {
+						self.volume = v;
+					}
+				}
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+		
+		Object.defineProperty(that, 'currentTime', {
+			get : function() {
+				return currentTime;
+			},
+			set : function(t) {
+				/* is it playing? If not, we need to play first */
+				if (!begun || ended) {
+					this.play;
+					this.pause;
+				}
+				
+				t = parseFloat(t);
+				
+				if (typeof t == 'number' &amp;&amp; !isNaN(t)) {
+					currentTime = t;
+					
+					/* continuous media */
+					if (media_type == 0 &amp;&amp; initiated) {
+						self.currentTime = t;
+					}
+				}
+			},
+			enumerable: true,
+			configurable: true
+ 		});
+		
+		/* we need to start listeners from the beginning. Continous media can be started by user interaction */
+		if (media_type == 0) {
+			that.initialize;
+		}
+		
+		return that;
+	}
+
+	/**
+	 * listen to the ontssparserready event and then add time style to body element.
+	 *
+	 * @method
+	 * @listens tssParser#ontssparserready
+	 */
+	document.addEventListener('ontssparserready', function(e) {
+		if (!e.detail) { /* detail is filled only when styles are added dynamically */
+			/* start timers to track how long the time renderer execution takes */
+			try {
+				/* http://www.html5rocks.com/en/tutorials/webperformance/usertiming/ */
+				window.performance.mark('tss_renderer_time');
+			} catch (e) {
+				console.time('calculating tss_renderer_time.js execution time');
+			}
+			
+			var options = extend(window.tss(document.body), 
+				{
+					timingContainer : 'par',
+					timingPlayState : 'running',
+					dur : 'infinite',
+					domNode : document.body
+				});
+			extend(document.body.style, new TSSPar(options));
+			
+			/* stop timers that were previously started by calling console.time() and User Timing API */
+			try {
+				window.performance.measure('tss_renderer_time');
+				console.log('calculating tss_renderer_time.js execution time: ' +
+							(window.performance.getEntriesByType('measure')[1].duration
+							- window.performance.getEntriesByType('mark')[1].startTime).toPrecision(5) + "ms");
+			} catch (e) {
+				console.timeEnd('calculating tss_renderer_time.js execution time');
+			}
+
+			if (document.body.style.timingPlayState != 'paused') document.body.style.play;
+		} else {
+			var elems = document.getElementsByTagName('*');
+			var runningElems = new Array();
+			var pausedElems = new Array();
+			
+			/* let's keep playback state */
+			for (var i=0; i&lt;elems.length; i++) {
+				if (elems[i].style.begun &amp;&amp; elems[i].style.playing) runningElems.push(elems[i]);
+				
+				if (elems[i].style.paused) pausedElems.push(elems[i]);
+			}
+			
+			for (var i=0; i&lt;elems.length; i++) {
+				var elem = elems[i];
+				if (Object.getOwnPropertyDescriptor(elem.style, 'timingDelay')) {
+					elem.style.stop;
+					parseItem(elem, elem.parentNode);
+				}
+			}
+			
+			/* restore playback state */
+			if (document.body.style.timingPlayState != 'paused') document.body.style.play;
+			for (var i=runningElems.length-1; i>=0; i--) {
+				var style = window.tss(runningElems[i]);
+				if (!style || style.timingPlayState != 'paused') runningElems[i].style.play;
+			}
+			for (var i=pausedElems.length-1; i>=0; i--) {
+				pausedElems[i].style.pause;
+			}
+		}
+	});
+})()
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-tss_parser.html">tss_parser</a></li><li><a href="module-tss_renderer_time.html">tss_renderer_time</a></li></ul><h3>Events</h3><ul><li><a href="module-tss_parser.html#~event:ontssparserready">ontssparserready</a></li></ul><h3>Namespaces</h3><ul><li><a href="module-tss_parser-window.html">window</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.3.3</a> on Wed Oct 07 2015 15:56:22 GMT-0300 (BRT)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

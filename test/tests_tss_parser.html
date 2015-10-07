@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset='utf-8'>
+	<title>TSS testing set</title>
+	
+	<link rel='stylesheet' href='https://code.jquery.com/qunit/qunit-1.19.0.css'>
+	<script src='https://code.jquery.com/qunit/qunit-1.19.0.js'></script>
+	
+	<script src='http://sources.disruptive-innovations.com/jscssp/trunk/cssParser.js'></script>
+	<script src='../timestylesheets.min.js'></script>
+</head>
+<body>	
+	<div id='qunit'></div>
+	<div id='qunit-fixture'></div>
+	<time>
+		div {
+			timing-delay: 1;
+		}
+		
+		.media {
+			timing-duration: 7.0s;
+		}
+		
+		#my_picture {
+			timing-duration: 9s;
+		}
+		
+		#my_picture {
+			timing-duration: 11;
+		}
+	</time>
+	<link rel='stylesheet' type='text/css' href='./resources/tests_parser.css'>
+	<script src='./resources/tests_parser.js'></script>
+	<img id='my_picture' class='media' src='' style='timing-delay: 20; display: none' />
+</body>
+</html>

@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
+	<meta name='viewport' content='width=device-width, initial-scale=1'>
+	<meta charset='utf-8'>
+	<title>TSS testing set</title>
+	
+	<script src='../src/cssParser.js'></script>
+	<script src='../timestylesheets.min.js'></script>
+	
+	<link rel='stylesheet' href='resources/tests_tss_renderer.css'>	
+</head>
+<body>
+	<section>
+		<h1>Example 01</h1>
+		<p>Defining specific presentation styles for different playback phases using pseudo-classes <i>:active</i> and <i>:not-active</i>.</p>
+		<article>
+			<video id='ex01' controls style='width: 420px;'>
+				<source src='http://www.w3schools.com/html/mov_bbb.mp4' />
+				<source src='http://www.w3schools.com/html/mov_bbb.ogv' />
+				Your browser does not support the video tag.
+			</video>
+			<style>
+				#ex01:active {
+					border: 5px solid green;
+				}
+			
+				#ex01:not-active {
+					border: 5px solid red;
+				}
+			</style>
+			<script>
+				var ex01 = document.getElementById('ex01');
+				ex01.bind('onplay onpause onbegin onend', function (event) {
+					event.stopPropagation();
+					console.log('ex01: ' + event.type + ' event');
+				});
+				ex01.bind('ontimeupdate', function (event) {
+					event.stopPropagation();
+					console.log('ex01 time: ' + ex01.style.currentTime);
+				});
+			</script>
+			<div>
+				<button data-inline='true' onclick='ex01.style.timingPlayState="running";'>Play</button>
+				<button data-inline='true' onclick='ex01.style.timingPlayState="paused";'>Pause</button>
+			</div>
+		</article>
+		<aside>
+			<pre>
+&lt;video id="ex01" controls&gt;
+  &lt;source src="movie.webm" /&gt;
+  &lt;source src="movie.mp4" /&gt;
+  &lt;source src="movie.ogv" /&gt;
+  Your browser does not support the video tag.
+&lt;/video&gt;
+&lt;style&gt;
+#ex01:active {
+  border: 5px solid green;
+}
+
+#ex01:not-active {
+  border: 5px solid red;
+}
+&lt;/style&gt;</pre>
+		</aside>
+	</section>
+	
+	<section>
+		<h1>Example 02</h1>
+		<p>Specifying when a video stream begins and stops playing using properties <i>timing-clip-begin</i> and <i>timing-clip-end</i>.</p>
+		<article>
+			<video id='ex02' controls style='width: 420px;'>
+				<source src='http://www.w3schools.com/html/mov_bbb.mp4' />
+				<source src='http://www.w3schools.com/html/mov_bbb.ogv' />
+				Your browser does not support the video tag.
+			</video>
+			<style>
+				#ex02 {
+					timing-clip-begin: 3s;
+					timing-clip-end: 7s;
+				}			
+			</style>
+			<script>
+				var ex02 = document.getElementById('ex02');
+				ex02.bind('onplay onpause onbegin onend', function (event) {
+					event.stopPropagation();
+					console.log('ex02: ' + event.type + ' event');
+				});
+				ex02.bind('ontimeupdate', function (event) {
+					event.stopPropagation();
+					console.log('ex02 time: ' + ex02.style.currentTime);
+				});
+			</script>
+			<div>
+				<button data-inline='true' onclick='ex02.style.timingPlayState="running";'>Play</button>
+				<button data-inline='true' onclick='ex02.style.timingPlayState="paused";'>Pause</button>
+			</div>
+		</article>
+		<aside>
+			<pre>
+&lt;video id="ex02" controls&gt;
+  &lt;source src="movie.webm" /&gt;
+  &lt;source src="movie.mp4" /&gt;
+  &lt;source src="movie.ogv" /&gt;
+  Your browser does not support the video tag.
+&lt;/video&gt;
+&lt;style&gt;
+#ex02 {
+  timing-clip-begin: 3s;
+  timing-clip-end: 7s;
+}
+&lt;/style&gt;</pre>
+		</aside>
+	</section>
+	
+	<section>
+		<h1>Example 03</h1>
+		<p>Creating a sequential image slideshow using the property <i>timing-container</i>.</p>
+			<article>
+			<div id='ex03'>
+				<img src='https://upload.wikimedia.org/wikipedia/commons/c/c5/Big_buck_bunny_poster_big.jpg' />
+				<img src='https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/Sintel_poster.jpg/800px-Sintel_poster.jpg' />
+				<img src='https://upload.wikimedia.org/wikipedia/commons/thumb/7/70/Tos-poster.png/220px-Tos-poster.png' />
+			</div>
+			<style>
+				#ex03 {
+					timing-container: seq;
+					timing-iteration-count: infinite;
+				}
+			
+				#ex03 img {
+					width: 194px;
+					height: 278px;
+					timing-duration: 1s;
+				}
+				
+				#ex03 img:not-active {
+					display: none;
+				}
+			</style>
+			<script>
+				var ex03 = document.getElementById('ex03');
+				ex03.bind('onplay onpause onbegin onend', function (event) {
+					event.stopPropagation();
+					//console.log('ex03: ' + event.type + ' event');
+				});
+				ex03.bind('ontimeupdate', function (event) {
+					event.stopPropagation();
+					//console.log('ex03 time: ' + ex03.style.currentTime);
+				});
+			</script>
+			<div>
+				<button data-inline='true' onclick='ex03.style.timingPlayState="running";'>Play</button>
+				<button data-inline='true' onclick='ex03.style.timingPlayState="paused";'>Pause</button>
+			</div>
+		</article>
+		<aside>
+			<pre>
+&lt;div id="ex03"&gt;
+  &lt;img src="img1.png" /&gt;
+  &lt;img src="img2.png" /&gt;
+  &lt;img src="img3.png" /&gt;
+&lt;/div&gt;
+&lt;style&gt;
+  #ex03 {
+    timing-container: seq;
+    timing-iteration-count: infinite;
+  }
+
+  #ex03 img {
+    timing-duration: 1s;
+  }
+	
+  #ex03 img:not-active {
+    display: none;
+  }
+&lt;/style&gt;
+			</pre>
+		</aside>
+	</section>
+	
+	<section>
+		<h1>Example 04</h1>
+		<p>Synchronizing a quiz with the video playback using property <i>timing-sync-master</i>.</p>
+		<article>
+			<video id='ex04' controls style='width: 420px;'>
+				<source src='http://www.w3schools.com/html/mov_bbb.mp4' />
+				<source src='http://www.w3schools.com/html/mov_bbb.ogv' />
+				Your browser does not support the video tag.
+			</video>
+			<a id='popupDialogLink' href='#popupDialog' data-rel='popup' data-position-to='window' data-transition='pop' style=display: none;'></a>
+			<form id='form04' onsubmit='return false;'>
+				<div data-role='popup' id='popupDialog' data-dismissible='false' style='max-width:500px;'>
+					<div data-role='header' data-theme='a'>
+						<h1>Question...</h1>
+					</div>
+					<div role='main' class='ui-content'>
+						<h3 class='ui-title'>What's the name of this movie?</h3>
+						<input type='radio' name='q01' id='q01_sintel' value='sintel'><label for='q01_sintel'>Sintel</label>
+						<input type='radio' name='q01' id='q01_tos' value='tears of steel'><label for='q01_tos'>Tears of Steel</label>
+						<input type='radio' name='q01' id='q01_bunny' value='big buck bunny'><label id='label_bunny' for='q01_bunny'>Big Buck Bunny</label>
+						<input data-theme='b' data-inline='true' type='submit' value='Submit' onclick='checkQuiz();'>
+					</div>
+				</div>
+			</form>
+			<style>
+				#form04 {
+					timing-delay: 5s;
+					timing-duration: 1s;
+					timing-sync-master: #ex04;
+				}
+				
+				#form04:not-active {
+					display: none;
+				}
+			</style>
+			<script>
+				var isFullscreen = false;
+				
+				var form04 = document.getElementById('form04');
+				form04.bind('onplay', function (event) {
+					event.stopPropagation();
+					
+					if (document.getElementById('ex04').style.currentTime >= 5.0) document.getElementById('popupDialogLink').click();
+					
+					document.getElementById('ex04').style.timingPlayState = 'paused';
+					
+					if (document.getElementById('ex04').fullScreen || 
+						document.getElementById('ex04').mozFullScreen || 
+						document.getElementById('ex04').webkitIsFullScreen || 
+						document.getElementById('ex04').fullscreenchange) {
+						isFullscreen = true;
+						toggleFullScreen('ex04', false);
+					}
+				});
+				
+				function checkQuiz() {
+					if (document.getElementById('q01_bunny').checked) {
+						document.getElementById('label_bunny').style.color = 'green';
+						if (isFullscreen) toggleFullScreen('ex04', true);
+						document.getElementById('ex04').style.timingPlayState='running';
+						alert('Well done!');
+					}
+					else {
+						alert('Try again');
+					}
+					
+					return false;
+				}
+				
+				function toggleFullScreen(video_id, flag) {
+					var video = document.getElementById(video_id);
+					
+					if (flag && !video.fullscreenElement &&    // alternative standard method
+					  !video.mozFullScreenElement && !video.webkitFullscreenElement && !video.msFullscreenElement ) {  // current working methods
+						if (video.requestFullscreen) {
+							video.requestFullscreen();
+						} else if (video.msRequestFullscreen) {
+							video.msRequestFullscreen();
+						} else if (video.mozRequestFullScreen) {
+							video.mozRequestFullScreen();
+						} else if (video.webkitRequestFullscreen) {
+							video.webkitRequestFullscreen(Element.ALLOW_KEYBOARD_INPUT);
+						}
+					} else {
+						video.webkitExitFullscreen();
+						
+						if (video.exitFullscreen) {
+							video.exitFullscreen();
+						} else if (video.msExitFullscreen) {
+							video.msExitFullscreen();
+						} else if (video.mozCancelFullScreen) {
+							video.mozCancelFullScreen();
+						} else if (video.webkitExitFullscreen) {
+							video.webkitExitFullscreen();
+						}
+					}
+				}
+			</script>
+		</article>
+		<aside>
+			<pre>
+&lt;video id="ex04" controls&gt;
+  &lt;source src="movie.webm" /&gt;
+  &lt;source src="movie.mp4" /&gt;
+  &lt;source src="movie.ogv" /&gt;
+  Your browser does not support the video tag.
+&lt;/video&gt;
+&lt;form id="form04" onsubmit="return false;"&gt;
+  What's the name of this movie?
+  &lt;input type="radio"&gt;&lt;label&gt;Sintel&lt;/label&gt;
+  &lt;input type="radio"&gt;&lt;label&gt;Tears of Steel&lt;/label&gt;
+  &lt;input type="radio"&gt;&lt;label&gt;Big Buck Bunny&lt;/label&gt;
+  &lt;input type="submit" value="Submit" onclick="checkQuiz();"&gt;
+&lt;/form&gt;
+&lt;style&gt;
+#form04 {
+  timing-delay: 5s;
+  timing-duration: 1s;  /* hide form 1s after playback is resumed */
+  timing-sync-master: #ex04;
+}
+
+#form04:not-active {
+  display: none;
+}
+&lt;/style&gt;
+&lt;script&gt;
+  var form04 = document.getElementById("form04");
+  form04.bind("onplay", function (event) {
+    event.stopPropagation();
+  
+    document.getElementById("ex04").style.timingPlayState = "paused";
+  });
+	
+  function checkQuiz() {
+    ...
+  }
+&lt;/script&gt;</pre>
+		</aside>
+	</section>
+	
+	<section>
+		<h1>Example 05</h1>
+		<p>Modifying the property <i>timing-container</i> on the fly (<button class='small_button' onclick='ex05.style.timingContainer = "seq";'>seq</button> | <button class='small_button' onclick='ex05.style.timingContainer = "par";'>par</button>).</p>
+		<article>
+			<div id='ex05'>
+				<img src='https://upload.wikimedia.org/wikipedia/commons/c/c5/Big_buck_bunny_poster_big.jpg' />
+				<img src='https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/Sintel_poster.jpg/800px-Sintel_poster.jpg' />
+				<img src='https://upload.wikimedia.org/wikipedia/commons/thumb/7/70/Tos-poster.png/220px-Tos-poster.png' />
+			</div>
+			<style>
+				#ex05 {
+					timing-container: seq;
+					timing-iteration-count: infinite;
+				}
+		
+				#ex05 img {
+					width: 100px;
+					height: 145px;
+				
+					timing-delay: 0.5s;
+					timing-duration: 1s;
+				}
+			
+				#ex05 img:not-active {
+					visibility: hidden;
+				}
+			</style>
+			<script>
+				var ex05 = document.getElementById('ex05');
+				ex05.bind('onplay onpause onbegin onend', function (event) {
+					event.stopPropagation();
+					//console.log('ex05: ' + event.type + ' event');
+				});
+				ex05.bind('ontimeupdate', function (event) {
+					event.stopPropagation();
+					//console.log('ex05 time: ' + ex05.style.currentTime);
+				});
+			</script>
+			<div>
+				<button data-inline='true' onclick='ex05.style.timingPlayState="running";'>Play</button>
+				<button data-inline='true' onclick='ex05.style.timingPlayState="paused";'>Pause</button>
+			</div>
+		</article>
+		<aside>
+			<pre>
+&lt;div id="ex05"&gt;
+  &lt;img src="img1.png" /&gt;
+  &lt;img src="img2.png" /&gt;
+  &lt;img src="img5.png" /&gt;
+&lt;/div&gt;
+&lt;button onclick="document.getElementById('ex05').style.timingContainer = 'seq';"&gt;seq&lt;/button&gt;
+&lt;button onclick="document.getElementById('ex05').style.timingContainer = 'par';"&gt;par&lt;/button&gt;
+&lt;style&gt;
+  #ex05 {
+    timing-container: seq;
+    timing-iteration-count: infinite;
+  }
+
+  #ex05 img {
+    timing-delay: 0.5s;
+    timing-duration: 1s;
+  }
+	
+  #ex05 img:not-active {
+    visibility: hidden;
+  }
+&lt;/style&gt;</pre>
+		</aside>
+	</section>
+</body>
+</html>
