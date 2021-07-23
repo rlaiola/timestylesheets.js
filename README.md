@@ -11,7 +11,7 @@ Timing properties are named after similar concepts that are already in use withi
 Timing Events extend current DOM events and follow the [W3C DOM Level 2](http://www.w3.org/TR/DOM-Level-2-Core/) standard model, which can be normally used within HTML elements. Alternatively, it is also possible to register/unregister event listeners on event target objects using the JavaScript methods addEventListener and removeEventLister, respectively. Complementary, TSS pseudo-classes can also be used to define specific presentation styles for different playback phases, in particular, when the playback cycle effectively starts (after timing-delay is computed) or ends.
 
 ## Documentation
-The documentation of the JavaScript library implementation can be found in the [docs](https://cdn.rawgit.com/rlaiola/timestylesheets.js/master/docs/index.html) folder. In this section we provide an overview of the facilities provided by Time Style Sheets to encode temporal presentations on the Web. For more details, please refer to:
+The documentation of the JavaScript library implementation can be found in the [docs](https://rlaiola.github.io/timestylesheets.js/docs/index.html) folder. In this section we provide an overview of the facilities provided by Time Style Sheets to encode temporal presentations on the Web. For more details, please refer to:
 
 Rodrigo Laiola Guimarães, Dick Bulterman, Pablo Cesar, and Jack Jansen. 2014. Synchronizing Web Documents with Style. In *Proceedings of the 20th Brazilian Symposium on Multimedia and the Web* (WebMedia '14). ACM, New York, NY, USA, 151-158. DOI=10.1145/2664551.2664555 [http://doi.acm.org/10.1145/2664551.2664555](http://doi.acm.org/10.1145/2664551.2664555)
 
@@ -138,7 +138,7 @@ Once the page is completely loaded by the browser, the TSS parser examines the a
 ![Implementation diagram.](images/workflow.png)
 
 ## Examples
-This repository contains basic code examples for the TSS [parser](https://cdn.rawgit.com/rlaiola/timestylesheets.js/master/test/tests_tss_parser.html) and [renderer](https://cdn.rawgit.com/rlaiola/timestylesheets.js/master/test/tests_tss_renderer_time.html) to help you understand how to use this JavaScript implementation of Time Style Sheets.
+This repository contains basic code examples for the TSS [parser](https://rlaiola.github.io/timestylesheets.js/test/tests_tss_parser.html) and [renderer](https://rlaiola.github.io/timestylesheets.js/test/tests_tss_renderer_time.html) to help you understand how to use this JavaScript implementation of Time Style Sheets.
 
 ## Credits
 The initial code was developed by [Rodrigo Laiola Guimarães](http://www.rodrigolaiola.com) at [IBM Research](http://www.research.ibm.com/labs/brazil/).
